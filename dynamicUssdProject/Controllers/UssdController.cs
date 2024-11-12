@@ -27,46 +27,73 @@ namespace dynamicUssdProject.Controllers
             _userRepository = userRepository;
         }
 
-        private async Task<UssdResponse> ExecuteAction(string actionUrl)
+        [HttpGet("menu/main")]
+        public async Task<IActionResult> GetMainMenu()
         {
-            // Based on ActionUrl, you can define specific logic here or call external services
-            if (actionUrl.Contains("transferFunds"))
-            {
-                return new UssdResponse { Message = "Transfer Money action executed.", IsFinal = true };
-            }
-            else if (actionUrl.Contains("balanceInquiry"))
-            {
-                return new UssdResponse { Message = "Your balance is $100.", IsFinal = true };
-            }
+            var mainMenu = await _context.Menus
+                .Where(m => m.ParentId == null) // Top-level menus
+                .OrderBy(m => m.Id) // Optional: Order by Id or another field
+                .ToListAsync();
 
-            // Default response for unhandled actions
-            return new UssdResponse { Message = "Action completed.", IsFinal = true };
+            // Format the main menu as a numbered list with only DisplayText as plain text
+            var formattedMainMenu = string.Join(Environment.NewLine, mainMenu.Select((menu, index) =>
+                $"{index + 1}. {menu.DisplayText}")
+            );
+
+            return Ok(formattedMainMenu);
         }
 
-        [HttpGet("options/{id}")]
-        public async Task<IActionResult> GetMenuOptionById(int id)
+        [HttpGet("menu/submenu/{parentId}")]
+        public async Task<IActionResult> GetSubMenu(int parentId)
         {
-            var option = await _ussdMenuService.GetMenuOptionByIdAsync(id);
-            if (option == null)
+            var subMenu = await _context.SubMenus
+                .Where(sm => sm.ParentMenuId == parentId)
+                .OrderBy(sm => sm.Id) // Optional: Order by Id or another field
+                .ToListAsync();
+
+            if (!subMenu.Any())
             {
-                return NotFound();
+                return NotFound("No submenus available for this option.");
             }
 
-            return Ok(option);
+            // Format the sub menu as a numbered list with only DisplayText as plain text
+            var formattedSubMenu = string.Join(Environment.NewLine, subMenu.Select((menu, index) =>
+                $"{index + 1}. {menu.DisplayText}")
+            );
+
+            return Ok(formattedSubMenu);
         }
 
-        [HttpGet("options")]
-        public async Task<IActionResult> GetAllMenuOptions()
+        [HttpPost("action/{actionUrl}")]
+        public async Task<IActionResult> ExecuteAction([FromBody] ActionRequest request)
         {
-            // Fetch all menu options from the database
-            var menuOptions = await _context.Menus.Include(menu => menu.SubMenus).ToListAsync();
+            // Validate PIN first
+            if (!await VerifyPin(request.PhoneNumber, request.Pin))
+            {
+                return Ok("Invalid PIN. Please try again.");
+            }
 
-            // Return the list of menu options
-            return Ok(menuOptions);
+            // Execute action based on the ActionUrl provided
+            if (request.ActionUrl.Contains("balance"))
+            {
+                // Call service or repository method to get balance
+                var balance = await _userRepository.GetBalanceAsync(request.PhoneNumber, request.Pin);
+                return Ok($"Your account balance is: ${balance}");
+            }
+            else if (request.ActionUrl.Contains("miniStatement"))
+            {
+                // Call service to get mini statement
+                var miniStatement = await _accountService.GetMiniStatementAsync(request.PhoneNumber);
+                return Ok(miniStatement);
+            }
+
+            // Add more actions as needed based on action URL
+            return Ok("Action executed successfully.");
         }
-    
 
-    [HttpPost("transferFunds/mobileNumber")]
+
+
+        [HttpPost("transferFunds/mobileNumber")]
     public async Task<IActionResult> TransferFundsToMobile([FromBody] TransferFundsToMobileRequest request)
     {
         if (!await VerifyPin(request.PhoneNumber, request.Pin))
