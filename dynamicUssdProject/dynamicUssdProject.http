@@ -1,0 +1,6 @@
+@dynamicUssdProject_HostAddress = http://localhost:5211
+
+GET {{dynamicUssdProject_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
